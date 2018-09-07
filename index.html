@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Probability Zoom</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.10.0-rc.1/dist/katex.min.css" integrity="sha384-D+9gmBxUQogRLqvARvNLmA9hS2x//eK1FhVb9PiU86gmcrBrJAQT8okdJ4LMp2uv" crossorigin="anonymous">
+
+    <!-- The loading of KaTeX is deferred to speed up page rendering -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.10.0-rc.1/dist/katex.min.js" integrity="sha384-483A6DwYfKeDa0Q52fJmxFXkcPCFfnXMoXblOkJ4JcA8zATN6Tm78UNL72AKk+0O" crossorigin="anonymous"></script>
+
+    <!-- To automatically render math in text elements, include the auto-render extension: -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.10.0-rc.1/dist/contrib/auto-render.min.js" integrity="sha384-yACMu8JWxKzSp/C1YV86pzGiQ/l1YUfE8oPuahJQxzehAjEt2GiQuy/BIvl9KyeF" crossorigin="anonymous"></script>
+</head>
+<body style="font: 30px Futura;">
+    <canvas width="600px" height="600px" style="float: left; margin: 0 10px"></canvas>
+<!--     $$
+        P(A \given B) 
+        P(B \given W) = 
+        P(B \given A) 
+        P(A \given W)
+    $$ -->
+    
+    <a onclick="targetRectangle = intersectRectangles(targetRectangle, rectA);">given A</a><br>
+    <a onclick="targetRectangle = intersectRectangles(targetRectangle, rectB);">given B</a><br>
+    <a onclick="targetRectangle = rectW;">forget everything</a>
+    <p id="zoomFactor"></p>
+</body>
+<script>
+
+    function hsva(hue, saturation, value, alpha)
+    {
+        // https://en.wikipedia.org/wiki/HSL_and_HSV#From_HSV
+
+        var chroma = saturation * value;
+        var h = (hue % 1) * 6;
+        var secondary = chroma * (1 - Math.abs((h % 2) - 1));
+        
+        var color;
+        if (h <= 1)      color = [chroma, secondary, 0];
+        else if (h <= 2) color = [secondary, chroma, 0];
+        else if (h <= 3) color = [0, chroma, secondary];
+        else if (h <= 4) color = [0, secondary, chroma];
+        else if (h <= 5) color = [secondary, 0, chroma];
+        else             color = [chroma, 0, secondary];
+
+        var deltaValue = value - chroma;
+        color[0] += deltaValue;
+        color[1] += deltaValue;
+        color[2] += deltaValue;
+        color[3] = alpha;
+
+        return 'rgba(' + Math.floor(color[0]*255) + ',' + Math.floor(color[1]*255) + ',' + Math.floor(color[2]*255) + ',' + color[3] + ')';
+    }
+
+    var canvas = document.querySelector("canvas");
+    var c = canvas.getContext('2d');
+
+    function transformPoint(transform, p)
+    {
+        var newP = [];
+        newP[0] = transform[0] * p[0] + transform[2] * p[1] + transform[4];
+        newP[1] = transform[1] * p[0] + transform[3] * p[1] + transform[5];
+        return newP;
+    }
+
+    function transformVector(transform, v)
+    {
+        var newV = [];
+        newV[0] = transform[0] * v[0] + transform[2] * v[1];
+        newV[1] = transform[1] * v[0] + transform[3] * v[1];
+        return newV;
+    }
+
+    function fillRectangle(viewportTransform, r) {
+        var position = transformPoint(viewportTransform, r.position);
+        var dimension = transformVector(viewportTransform, r.dimension);
+        c.fillRect(position[0], position[1], dimension[0], dimension[1]);
+    }
+
+    function drawText(viewportTransform, position, text)
+    {
+        position = transformPoint(viewportTransform, position);
+        c.fillText(text, position[0], position[1]);
+    }
+
+    function getMiddle(rectangle)
+    {
+        return [rectangle.position[0] + rectangle.dimension[0]/2, rectangle.position[1] + rectangle.dimension[1]/2];
+    }
+
+    function intersectIntervals(a, b)
+    {
+        var aMin = a.position;
+        var aMax = aMin + a.dimension;
+        var bMin = b.position;
+        var bMax = bMin + b.dimension;
+        var min = Math.max(aMin, bMin);
+        var max = Math.min(aMax, bMax);
+        if (max < min)
+            return null;
+        return {position: min, dimension: (max - min)};
+    }
+
+    function intersectRectangles(a, b)
+    {
+        var xInterval = intersectIntervals({position: a.position[0], dimension: a.dimension[0]}, {position: b.position[0], dimension: b.dimension[0]});
+        var yInterval = intersectIntervals({position: a.position[0], dimension: a.dimension[0]}, {position: b.position[0], dimension: b.dimension[0]});
+        if (xInterval === null || yInterval === null)
+            return null;
+        return {position: [xInterval.position, yInterval.position], dimension: [xInterval.dimension, yInterval.dimension]};
+    }
+
+    function transformFromRectangle(r)
+    {
+        var transform = [];
+        transform[0] = canvas.width / r.dimension[0];
+        transform[1] = 0;
+        transform[2] = 0;
+        transform[3] = canvas.height / r.dimension[1];
+        transform[4] = -transform[0] * r.position[0];
+        transform[5] = -transform[3] * r.position[1];
+        return transform;
+    }
+
+    function add(a, b)
+    {
+        return [a[0] + b[0], a[1] + b[1]];
+    }
+
+    var rectW = {position: [0, 0], dimension: [1, 1]};
+    var rectA = {position: [0.03, 0.03], dimension: [0.6, 0.6]};
+    var rectB = {position: [0.37, 0.37], dimension: [0.6, 0.6]};
+    var rectAB = intersectRectangles(rectA, rectB);
+
+    var currentTransform = transformFromRectangle(rectW);
+    var targetRectangle = rectW;
+
+    function loop() {
+        c.clearRect(0, 0, canvas.width, canvas.height);
+        c.strokeRect(0, 0, canvas.width, canvas.height);
+
+        var targetTransform = transformFromRectangle(targetRectangle);
+
+        var speed = 0.1;
+        for (var i = 0; i < 6; i++) {
+            currentTransform[i] = (1 - speed) * currentTransform[i] + speed * targetTransform[i];
+        }
+
+        c.fillStyle = hsva(0.5, 0.9, 0.5, 0.4);
+        fillRectangle(currentTransform, rectA);
+
+        c.fillStyle = 'black';
+        c.font = "30px Futura";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        drawText(currentTransform, add(getMiddle(rectA), [-0.1, -0.1]), "A");
+        drawText(currentTransform, add(getMiddle(rectB), [0.1, 0.1]), "B");
+        drawText(currentTransform, getMiddle(rectAB), "A and B");
+
+        c.fillStyle = hsva(0, 0.9, 0.5, 0.4);
+        fillRectangle(currentTransform, rectB);
+
+        var zoomFactor = currentTransform[0] * currentTransform[3] / (canvas.width * canvas.height);
+        var zoomFactorDisplay = document.querySelector("#zoomFactor");
+        zoomFactorDisplay.innerHTML = "scale:" + (1 / zoomFactor).toFixed(2);
+
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+
+    window.addEventListener("load", (event) => {
+        renderMathInElement(document.body, {macros: {"\\given": "\\operatorname{given}"}});
+    });
+</script>
+</html>
